@@ -241,12 +241,16 @@ class NaiveView(APIView):
 
 Before we start, we prepare data to insert for `wrk`: `curl "http://localhost:8080/data?feed=xy&ix=0&size=50000&col[]=x&col[]=y" > data.json`
 
-We run Django project in development mode. The load test log corresponds to the template: `command` - RPS (Data transfer)
+We run Django project in development mode. The load test log corresponds to the template:
+
+`command` - RPS (Data transfer)
 
 #### Get short data:
 
 `wrk -c 1 -d 5 -t 1 http://localhost:8080/version` - 17000 (3.2MB)
+
 `wrk -c 1 -d 5 -t 1 http://localhost:8000/api/naive/version` - 24 (8.6KB)
+
 `wrk -c 1 -d 5 -t 1 http://localhost:8000/api/proxy/version` - 24 (8.6KB)
 
 This shows how much Django is slow in the development mode.
@@ -254,7 +258,9 @@ This shows how much Django is slow in the development mode.
 #### Get big dataset (1M rows):
 
 `wrk -c 1 -d 5 -t 1 "http://localhost:8080/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 8.8 (320MB)
+
 `wrk -c 1 -d 5 -t 1 "http://localhost:8000/api/naive/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 5.2 (190MB)
+
 `wrk -c 1 -d 5 -t 1 "http://localhost:8000/api/proxy/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 4.8 (175MB)
 
 `proxy` is a bit slower but it consumes less memory limited by `CHUNK_SIZE = 65536` (in bytes) instead of full body in `naive`. So `proxy` is much more efficient in real usage.
@@ -262,7 +268,9 @@ This shows how much Django is slow in the development mode.
 #### Send big dataset (50K rows):
 
 `wrk -c 1 -d 5 -t 1 -s load-update.lua "http://localhost:8080/data?feed=xy&ix=0"` - 38
+
 `wrk -c 1 -d 5 -t 1 -s load-update.lua "http://localhost:8000/api/naive/data?feed=xy&ix=0"` - 14
+
 `wrk -c 1 -d 5 -t 1 -s load-update.lua "http://localhost:8000/api/proxy/data?feed=xy&ix=0"` - 14
 
 Sending body size is limited by the server and is not handled in chunks.
