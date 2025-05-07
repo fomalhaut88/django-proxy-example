@@ -34,7 +34,7 @@ async def push_dataset(dataset):
 
 async def main():
     await clear()
-    dataset = generate_dataset(50_000)
+    dataset = generate_dataset(1_000_000)
     await push_dataset(dataset)
     print(await get_size())
 

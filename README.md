@@ -157,7 +157,7 @@ async def push_dataset(dataset):
 
 async def main():
     await clear()
-    dataset = generate_dataset(50_000)
+    dataset = generate_dataset(1_000_000)
     await push_dataset(dataset)
     print(await get_size())
 
@@ -166,8 +166,6 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     loop.run_until_complete(main())
 ```
-
-**TODO: Fix the error: `aiohttp.client_exceptions.ClientResponseError: 413, message='Payload Too Large', url='http://localhost:8080/data?feed=xy'` for size greater than 60,000.**
 
 Before the run, install `aiohttp`: `pip install aiohttp`.
 
@@ -185,9 +183,6 @@ import requests
 from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
-
-
-CHUNK_SIZE = 65536
 
 
 def dict_keep(dct, keys):
@@ -209,10 +204,11 @@ class ProxyView(APIView):
             url += '?' + qs
         with requests.request(
                 request.method, url, data=request, 
-                headers=dict_keep(request.headers, ['content-type', 'accept'])
+                headers=dict_keep(request.headers, ['content-type', 'accept']),
+                stream=True
                 ) as resp:
-            return StreamingHttpResponse(
-                resp.iter_content(chunk_size=CHUNK_SIZE), 
+            return HttpResponse(
+                resp.raw,
                 status=resp.status_code, 
                 headers=resp.headers,
             )
@@ -239,40 +235,39 @@ class NaiveView(APIView):
 
 ## Step 6. Load test for get and update
 
-Before we start, we prepare data to insert for `wrk`: `curl "http://localhost:8080/data?feed=xy&ix=0&size=50000&col[]=x&col[]=y" > data.json`
+Before we start, we prepare data to insert for `wrk`: `curl "http://localhost:8080/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y" > data.json`
 
-We run Django project in development mode. The load test log corresponds to the template:
+We run Django project with UWSGI (`uwsgi --ini ./uwsgi.ini`) in 1 process. The load test log corresponds to the template:
 
-`command` - RPS (Data transfer)
+`command` - RPS (Comment)
 
-#### Get short data:
 
-`wrk -c 1 -d 5 -t 1 http://localhost:8080/version` - 17000 (3.2MB)
+#### Get short data (using UWSGI):
 
-`wrk -c 1 -d 5 -t 1 http://localhost:8000/api/naive/version` - 24 (8.6KB)
+`wrk -c 1 -d 5 -t 1 http://localhost:8080/version` - 16300
 
-`wrk -c 1 -d 5 -t 1 http://localhost:8000/api/proxy/version` - 24 (8.6KB)
+`wrk -c 1 -d 5 -t 1 http://localhost:8000/api/naive/version` - 800
 
-This shows how much Django is slow in the development mode.
+`wrk -c 1 -d 5 -t 1 http://localhost:8000/api/proxy/version` - 800
+
+This shows how slow Django is even with UWSGI.
 
 #### Get big dataset (1M rows):
 
-`wrk -c 1 -d 5 -t 1 "http://localhost:8080/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 8.8 (320MB)
+`wrk -c 1 -d 10 -t 1 "http://localhost:8080/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 9.7
 
-`wrk -c 1 -d 5 -t 1 "http://localhost:8000/api/naive/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 5.2 (190MB)
+`wrk -c 1 -d 10 -t 1 "http://localhost:8000/api/naive/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 4.1 (server memory jumps from 40MB to 80MB)
 
-`wrk -c 1 -d 5 -t 1 "http://localhost:8000/api/proxy/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 4.8 (175MB)
+`wrk -c 1 -d 10 -t 1 "http://localhost:8000/api/proxy/data?feed=xy&ix=0&size=1000000&col[]=x&col[]=y"` - 4.6 (server memory is mainly stable, sometimes jump happens, maybe due to GC)
 
-`proxy` is a bit slower but it consumes less memory limited by `CHUNK_SIZE = 65536` (in bytes) instead of full body in `naive`. So `proxy` is much more efficient in real usage.
+`proxy` is faster and in most cases has no big jumps.
 
-#### Send big dataset (50K rows):
+#### Send big dataset (1M rows):
 
-`wrk -c 1 -d 5 -t 1 -s load-update.lua "http://localhost:8080/data?feed=xy&ix=0"` - 38
+`wrk -c 1 -d 10 -t 1 -s load-update.lua "http://localhost:8080/data?feed=xy&ix=0"` - 1.7
 
-`wrk -c 1 -d 5 -t 1 -s load-update.lua "http://localhost:8000/api/naive/data?feed=xy&ix=0"` - 14
+`wrk -c 1 -d 10 -t 1 -s load-update.lua "http://localhost:8000/api/naive/data?feed=xy&ix=0"` - 1.4 (server memory jumps from 40MB to 460MB)
 
-`wrk -c 1 -d 5 -t 1 -s load-update.lua "http://localhost:8000/api/proxy/data?feed=xy&ix=0"` - 14
+`wrk -c 1 -d 10 -t 1 -s load-update.lua "http://localhost:8000/api/proxy/data?feed=xy&ix=0"` - 1.6 (server memory is stable)
 
-Sending body size is limited by the server and is not handled in chunks.
-
-**TODO: Implement sending data in chunks in `proxy`.**
+`proxy` is 15% faster and have no jumps totally compaing to `naive` that consumes extremely much memory.

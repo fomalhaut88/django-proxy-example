@@ -4,9 +4,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
 
-CHUNK_SIZE = 65536
-
-
 def dict_keep(dct, keys):
     return {
         k: v
@@ -26,10 +23,11 @@ class ProxyView(APIView):
             url += '?' + qs
         with requests.request(
                 request.method, url, data=request, 
-                headers=dict_keep(request.headers, ['content-type', 'accept'])
+                headers=dict_keep(request.headers, ['content-type', 'accept']),
+                stream=True
                 ) as resp:
-            return StreamingHttpResponse(
-                resp.iter_content(chunk_size=CHUNK_SIZE), 
+            return HttpResponse(
+                resp.raw,
                 status=resp.status_code, 
                 headers=resp.headers,
             )
