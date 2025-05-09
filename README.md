@@ -112,7 +112,7 @@ docker run \
 If everything is correct, http://localhost:8080/feed will show the available feed.
 
 6. Create calls `x` and `y` in the feed `xy`: make two requests `POST http://localhost:8080/col?feed=xy` 
-with the JSON contents `{"name":"x","datatype":"Float64"}` and `{"name":"x","datatype":"Float64"}`.
+with the JSON contents `{"name":"x","datatype":"Float64"}` and `{"name":"y","datatype":"Float64"}`.
 Once it is done, http://localhost:8080/col?feed=xy will print the columns you have just added.
 
 
